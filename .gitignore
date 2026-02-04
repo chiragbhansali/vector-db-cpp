@@ -1,0 +1,51 @@
+# macOS
+.DS_Store
+
+# Build directories (out-of-source builds)
+build*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+Makefile
+
+# CMake generated helper (optional - keep if you rely on it for tooling)
+# compile_commands.json
+
+# Compiled objects, libs and executables
+*.o
+*.obj
+*.lo
+*.a
+*.la
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+
+# Test / benchmark binaries (if built in-source)
+unit_tests
+benchmarks
+apps/
+bin/
+
+# IDE / editor
+.vscode/
+.idea/
+*.code-workspace
+
+# Editor swap / temp files
+*~
+*.swp
+.#*
+*.sw?
+
+# Logs, coverage, profiling
+*.log
+coverage/
+*.prof
+*.gcda
+*.gcno
+.github/agents/Learn.agent.md

@@ -269,3 +269,27 @@ TEST_CASE("Randomized: Cosine stable across magnitude scales") {
     }
   }
 }
+
+TEST_CASE("SIMD vs Scalar: Results must be identical") {
+  // Use a dimension that requires padding (e.g., 13)
+  constexpr size_t N = 100, DIM = 13, K = 10;
+  std::mt19937 rng(42);
+  auto db = generate_random_vectors(N, DIM, rng);
+
+  for (auto metric : {Metric::L2, Metric::Cosine}) {
+    FlatIndex index(DIM, metric);
+    for (auto &v : db)
+      index.insert(v);
+
+    auto query = generate_random_vectors(1, DIM, rng)[0];
+
+    auto results_simd = index.search(query, K, true);
+    auto results_scalar = index.search(query, K, false);
+
+    REQUIRE(results_simd.size() == results_scalar.size());
+    for (size_t i = 0; i < results_simd.size(); ++i) {
+      CHECK(results_simd[i].id == results_scalar[i].id);
+      CHECK(results_simd[i].score == doctest::Approx(results_scalar[i].score));
+    }
+  }
+}

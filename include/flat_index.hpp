@@ -12,6 +12,8 @@ public:
   void insert(std::span<const float> vec) override;
   std::vector<SearchResult> search(std::span<const float> query,
                                    size_t k) const override;
+  std::vector<SearchResult> search(std::span<const float> query, size_t k,
+                                   bool use_simd) const;
   void save(const std::string &path) const override;
   void load(const std::string &path) override;
   size_t size() const override;

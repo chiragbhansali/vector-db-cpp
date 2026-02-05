@@ -1,8 +1,10 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
+#include "flat_index.hpp"
 #include "vector_index.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <random>
 #include <vector>
 
@@ -25,7 +27,9 @@ static float dot(std::span<const float> a, std::span<const float> b) {
   return s;
 }
 
-static float vec_norm(std::span<const float> v) { return std::sqrtf(dot(v, v)); }
+static float vec_norm(std::span<const float> v) {
+  return std::sqrtf(dot(v, v));
+}
 
 // Squared L2 over all db vectors, sorted ascending
 static std::vector<SearchResult>
@@ -292,4 +296,38 @@ TEST_CASE("SIMD vs Scalar: Results must be identical") {
       CHECK(results_simd[i].score == doctest::Approx(results_scalar[i].score));
     }
   }
+}
+
+TEST_CASE("FlatIndex Serialization (Save/Load)") {
+  const std::string filename = "test_index.bin";
+  constexpr size_t DIM = 4;
+  FlatIndex index(DIM, Metric::L2);
+
+  std::vector<float> v1 = {1.0f, 0.0f, 0.0f, 0.0f};
+  std::vector<float> v2 = {0.0f, 1.0f, 0.0f, 0.0f};
+  index.insert(v1);
+  index.insert(v2);
+
+  // Save the index
+  index.save(filename);
+
+  // Load into a new index
+  FlatIndex loaded_index(DIM, Metric::L2);
+  loaded_index.load(filename);
+
+  CHECK(loaded_index.size() == 2);
+  CHECK(loaded_index.dimension() == DIM);
+
+  // Verify search results are the same
+  std::vector<float> query = {1.0f, 0.1f, 0.0f, 0.0f};
+  auto original_res = index.search(query, 1);
+  auto loaded_res = loaded_index.search(query, 1);
+
+  REQUIRE(original_res.size() == 1);
+  REQUIRE(loaded_res.size() == 1);
+  CHECK(original_res[0].id == loaded_res[0].id);
+  CHECK(original_res[0].score == doctest::Approx(loaded_res[0].score));
+
+  // Cleanup
+  std::remove(filename.c_str());
 }

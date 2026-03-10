@@ -9,6 +9,7 @@ CMakeCache.txt
 cmake_install.cmake
 install_manifest.txt
 Makefile
+.cache/*
 
 # CMake generated helper (optional - keep if you rely on it for tooling)
 # compile_commands.json

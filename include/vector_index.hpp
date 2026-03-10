@@ -11,9 +11,6 @@ struct SearchResult {
   size_t id;
   float score;
 
-  bool operator>(const SearchResult &other) const {
-    return score > other.score;
-  }
 };
 
 enum class Metric { L2, Cosine };

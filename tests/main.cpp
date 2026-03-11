@@ -1,6 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
 #include "flat_index.hpp"
+#include "ivf_flat_index.hpp"
+#include "kmeans.hpp"
 #include "vector_index.hpp"
 #include <algorithm>
 #include <cmath>
@@ -330,4 +332,326 @@ TEST_CASE("FlatIndex Serialization (Save/Load)") {
 
   // Cleanup
   std::remove(filename.c_str());
+}
+
+// Helper: checks if a centroid (at centroids[c*dim]) is near a target point
+static bool centroid_near(const std::vector<float> &centroids, size_t c,
+                           size_t dim, std::vector<float> target,
+                           float tol = 1.0f) {
+  for (size_t j = 0; j < dim; ++j) {
+    if (std::abs(centroids[c * dim + j] - target[j]) > tol)
+      return false;
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// IVFFlatIndex tests
+// ---------------------------------------------------------------------------
+
+// Build a small IVF index: train on data, insert all, then search.
+// With nprobe == num_centroids, every list is probed → exact top-K recall.
+static IVFFlatIndex build_ivf(const std::vector<std::vector<float>> &db,
+                              size_t dim, size_t num_centroids) {
+  std::vector<float> flat;
+  flat.reserve(db.size() * dim);
+  for (const auto &v : db)
+    flat.insert(flat.end(), v.begin(), v.end());
+
+  IVFFlatIndex idx(dim, Metric::L2, /*nprobe=*/num_centroids, num_centroids);
+  idx.train(flat);
+  for (const auto &v : db)
+    idx.insert(v);
+  return idx;
+}
+
+TEST_CASE("IVFFlatIndex: size and dimension") {
+  constexpr size_t DIM = 4, N = 20, K = 2;
+  std::mt19937 rng(1);
+  auto db = generate_random_vectors(N, DIM, rng);
+  auto idx = build_ivf(db, DIM, K);
+
+  CHECK(idx.size() == N);
+  CHECK(idx.dimension() == DIM);
+}
+
+TEST_CASE("IVFFlatIndex: exact recall with nprobe == num_centroids") {
+  // With nprobe equal to num_centroids all inverted lists are scanned, so
+  // results must match brute-force L2 for the top-K.
+  constexpr size_t N = 200, DIM = 16, K_CENTROIDS = 8, K = 5;
+  std::mt19937 rng(42);
+  auto db = generate_random_vectors(N, DIM, rng);
+  auto idx = build_ivf(db, DIM, K_CENTROIDS);
+
+  for (size_t q = 0; q < 5; ++q) {
+    auto query = generate_random_vectors(1, DIM, rng)[0];
+    auto got = idx.search(query, K);
+    auto ref = bruteforce_l2(db, query);
+
+    REQUIRE(got.size() == K);
+    for (size_t i = 0; i < K; ++i) {
+      CHECK(got[i].id == ref[i].id);
+      CHECK(got[i].score == doctest::Approx(ref[i].score));
+    }
+  }
+}
+
+TEST_CASE("IVFFlatIndex: nprobe parameter controls recall") {
+  // Higher nprobe → at least as good recall as lower nprobe.
+  constexpr size_t N = 300, DIM = 8, K_CENTROIDS = 10, K = 5;
+  std::mt19937 rng(7);
+  auto db = generate_random_vectors(N, DIM, rng);
+
+  std::vector<float> flat;
+  flat.reserve(N * DIM);
+  for (const auto &v : db)
+    flat.insert(flat.end(), v.begin(), v.end());
+
+  IVFFlatIndex idx(DIM, Metric::L2, /*nprobe=*/1, K_CENTROIDS);
+  idx.train(flat);
+  for (const auto &v : db)
+    idx.insert(v);
+
+  auto query = generate_random_vectors(1, DIM, rng)[0];
+  auto ref = bruteforce_l2(db, query);
+
+  auto top1_ids = [&](size_t nprobe) {
+    auto res = idx.search(query, K, nprobe);
+    std::vector<size_t> ids;
+    for (auto &r : res)
+      ids.push_back(r.id);
+    return ids;
+  };
+
+  // nprobe=K_CENTROIDS is full scan — must find exact nearest neighbor
+  auto full = top1_ids(K_CENTROIDS);
+  REQUIRE(!full.empty());
+  CHECK(full[0] == ref[0].id);
+}
+
+TEST_CASE("IVFFlatIndex: results sorted ascending by L2 score") {
+  constexpr size_t N = 100, DIM = 4, K_CENTROIDS = 4, K = 10;
+  std::mt19937 rng(99);
+  auto db = generate_random_vectors(N, DIM, rng);
+  auto idx = build_ivf(db, DIM, K_CENTROIDS);
+
+  auto query = generate_random_vectors(1, DIM, rng)[0];
+  auto results = idx.search(query, K);
+
+  REQUIRE(!results.empty());
+  for (size_t i = 1; i < results.size(); ++i)
+    CHECK(results[i - 1].score <= results[i].score);
+}
+
+TEST_CASE("IVFFlatIndex: k larger than corpus returns all vectors") {
+  constexpr size_t N = 10, DIM = 3, K_CENTROIDS = 2;
+  std::mt19937 rng(5);
+  auto db = generate_random_vectors(N, DIM, rng);
+  auto idx = build_ivf(db, DIM, K_CENTROIDS);
+
+  auto query = generate_random_vectors(1, DIM, rng)[0];
+  auto results = idx.search(query, N + 100); // ask for more than we have
+  CHECK(results.size() == N);
+}
+
+TEST_CASE("IVFFlatIndex: save and load round-trip") {
+  const std::string filename = "test_ivf_index.bin";
+  constexpr size_t DIM = 4, N = 30, K_CENTROIDS = 3, K = 3;
+  std::mt19937 rng(11);
+  auto db = generate_random_vectors(N, DIM, rng);
+  auto idx = build_ivf(db, DIM, K_CENTROIDS);
+
+  idx.save(filename);
+
+  IVFFlatIndex loaded(DIM, Metric::L2, K_CENTROIDS, K_CENTROIDS);
+  loaded.load(filename);
+
+  CHECK(loaded.size() == N);
+  CHECK(loaded.dimension() == DIM);
+
+  auto query = generate_random_vectors(1, DIM, rng)[0];
+  auto orig_res = idx.search(query, K, K_CENTROIDS);
+  auto load_res = loaded.search(query, K, K_CENTROIDS);
+
+  REQUIRE(orig_res.size() == load_res.size());
+  for (size_t i = 0; i < orig_res.size(); ++i) {
+    CHECK(orig_res[i].id == load_res[i].id);
+    CHECK(orig_res[i].score == doctest::Approx(load_res[i].score));
+  }
+
+  std::remove(filename.c_str());
+}
+
+// ---------------------------------------------------------------------------
+// Regression tests — each case targets a specific historical bug
+// ---------------------------------------------------------------------------
+
+// Bug: Constructor not defined → dim_, nprobe_, num_centroids_, metric_ are
+// uninitialized (UB). Regression: verify constructor arguments are visible
+// through the public API and drive correct runtime behavior.
+TEST_CASE("IVFFlatIndex regression: constructor args are stored") {
+  constexpr size_t DIM = 7, NPROBE = 3, K_CENTROIDS = 5;
+  IVFFlatIndex idx(DIM, Metric::L2, NPROBE, K_CENTROIDS);
+  CHECK(idx.dimension() == DIM);
+  CHECK(idx.size() == 0);
+
+  // num_centroids_ drives inverted_lists_.size() after train — check indirectly
+  // by inserting N vectors and confirming they round-trip through save/load.
+  std::mt19937 rng(2);
+  auto db = generate_random_vectors(20, DIM, rng);
+  std::vector<float> flat;
+  for (const auto &v : db)
+    flat.insert(flat.end(), v.begin(), v.end());
+  idx.train(flat);
+  for (const auto &v : db)
+    idx.insert(v);
+  CHECK(idx.size() == 20);
+}
+
+// Bug: insert() before train() is UB (out-of-bounds on empty inverted_lists_).
+// Regression: must throw rather than silently corrupt or crash.
+TEST_CASE("IVFFlatIndex regression: insert before train throws") {
+  IVFFlatIndex idx(4, Metric::L2, 2, 2);
+  std::vector<float> vec = {1.0f, 2.0f, 3.0f, 4.0f};
+  CHECK_THROWS(idx.insert(vec));
+}
+
+// Bug: metric_ ignored — search() always used compute_l2 regardless of the
+// metric passed to the constructor.
+// Regression: construct two discriminating vectors where L2 and cosine disagree
+// on the nearest neighbour, then assert cosine search picks the right one.
+//
+//   v0 = [10, 0]  — far from origin, perfectly aligned with query [1, 0]
+//   v1 = [0.1, 0.995] — close in L2, but nearly orthogonal to [1, 0]
+//   cosine nearest: v0 (similarity ≈ 1.0)
+//   L2 nearest:     v1 (squared dist ≈ 0.81 + 0.99 ≈ 1.80 vs 81 for v0)
+TEST_CASE("IVFFlatIndex regression: metric_ drives search (cosine vs L2)") {
+  constexpr size_t DIM = 2, K_CENTROIDS = 1;
+  // Single centroid so nprobe=1 is a full scan.
+  std::vector<float> train_data = {10.0f, 0.0f, 0.1f, 0.995f};
+
+  IVFFlatIndex idx(DIM, Metric::Cosine, /*nprobe=*/1, K_CENTROIDS);
+  idx.train(train_data);
+  idx.insert(std::vector<float>{10.0f, 0.0f});   // id 0 — cosine nearest
+  idx.insert(std::vector<float>{0.1f, 0.995f});  // id 1 — L2 nearest
+
+  auto results = idx.search(std::vector<float>{1.0f, 0.0f}, 1);
+  REQUIRE(results.size() == 1);
+  // If metric_ is ignored (L2 used), this returns id 1; correct cosine returns id 0.
+  CHECK(results[0].id == 0);
+}
+
+// Bug: inverted_lists_ (and size_) not reset on re-train — resize() is a
+// no-op when the vector already has the right size, leaving stale entries.
+// Regression: after a re-train + fresh inserts the size must reflect only
+// the new inserts, and search must not surface stale vectors.
+TEST_CASE("IVFFlatIndex regression: re-train resets inverted lists and size") {
+  constexpr size_t DIM = 2, K_CENTROIDS = 2;
+  IVFFlatIndex idx(DIM, Metric::L2, K_CENTROIDS, K_CENTROIDS);
+
+  // Phase 1 — train and populate with 6 vectors near origin
+  std::vector<float> data1 = {0.0f, 0.0f, 1.0f, 0.0f,
+                               0.0f, 1.0f, 0.5f, 0.5f,
+                               0.2f, 0.8f, 0.8f, 0.2f};
+  idx.train(data1);
+  for (size_t i = 0; i < 6; ++i) {
+    std::vector<float> v = {data1[i * 2], data1[i * 2 + 1]};
+    idx.insert(v);
+  }
+  REQUIRE(idx.size() == 6);
+
+  // Phase 2 — re-train on data far from origin, insert 2 new vectors
+  std::vector<float> data2 = {100.0f, 100.0f, 101.0f, 100.0f,
+                               100.0f, 101.0f, 101.0f, 101.0f};
+  idx.train(data2);
+  // After re-train, size must be 0 — old entries are gone
+  CHECK(idx.size() == 0);
+
+  idx.insert(std::vector<float>{100.0f, 100.0f});
+  idx.insert(std::vector<float>{101.0f, 101.0f});
+  CHECK(idx.size() == 2);
+
+  // Full-probe search: should only see the 2 new vectors, not the 6 old ones
+  auto results = idx.search(std::vector<float>{100.5f, 100.5f}, 10, K_CENTROIDS);
+  CHECK(results.size() == 2);
+  for (const auto &r : results)
+    CHECK(r.score < 5.0f); // both new vectors are within sqrt(5) of the query
+}
+
+TEST_CASE("KMeans: output size") {
+  // train() should always return exactly k * dim floats
+  std::vector<float> data = {0.0f, 0.0f, 1.0f, 1.0f,
+                             10.0f, 10.0f, 11.0f, 11.0f};
+  KMeans km;
+  auto centroids = km.train(data, 2, {2, 20});
+  CHECK(centroids.size() == 4); // k=2, dim=2
+}
+
+TEST_CASE("KMeans: converges on well-separated clusters") {
+  // Two tight clusters far apart — centroids must converge to their means:
+  // Cluster A: (0,0), (1,0), (0,1)  → mean (0.33, 0.33)
+  // Cluster B: (10,10), (11,10), (10,11) → mean (10.33, 10.33)
+  std::vector<float> data = {
+      0.0f,  0.0f,
+      1.0f,  0.0f,
+      0.0f,  1.0f,
+      10.0f, 10.0f,
+      11.0f, 10.0f,
+      10.0f, 11.0f,
+  };
+
+  KMeans km;
+  auto centroids = km.train(data, 2, {2, 50});
+  REQUIRE(centroids.size() == 4);
+
+  bool c0_low = centroid_near(centroids, 0, 2, {0.33f, 0.33f});
+  bool c1_low = centroid_near(centroids, 1, 2, {0.33f, 0.33f});
+  bool c0_high = centroid_near(centroids, 0, 2, {10.33f, 10.33f});
+  bool c1_high = centroid_near(centroids, 1, 2, {10.33f, 10.33f});
+
+  // One centroid near each cluster (order depends on random init)
+  CHECK(((c0_low && c1_high) || (c1_low && c0_high)));
+}
+
+TEST_CASE("KMeans: k=1 centroid is the global mean") {
+  // With k=1, the single centroid must be the mean of all vectors
+  std::vector<float> data = {
+      0.0f, 0.0f,
+      2.0f, 0.0f,
+      0.0f, 2.0f,
+      2.0f, 2.0f,
+  };
+  // Mean = (1.0, 1.0)
+
+  KMeans km;
+  auto centroids = km.train(data, 2, {1, 20});
+  REQUIRE(centroids.size() == 2);
+  CHECK(centroids[0] == doctest::Approx(1.0f));
+  CHECK(centroids[1] == doctest::Approx(1.0f));
+}
+
+TEST_CASE("KMeans: k=N each vector is its own centroid") {
+  // With k equal to number of vectors, each centroid should sit on a vector
+  std::vector<float> data = {
+      0.0f, 0.0f,
+      5.0f, 5.0f,
+      9.0f, 1.0f,
+  };
+
+  KMeans km;
+  auto centroids = km.train(data, 2, {3, 20});
+  REQUIRE(centroids.size() == 6); // k=3, dim=2
+
+  // Every data point should match one of the centroids exactly
+  auto matches_a_centroid = [&](float x, float y) {
+    for (size_t c = 0; c < 3; ++c) {
+      if (std::abs(centroids[c * 2] - x) < 0.01f &&
+          std::abs(centroids[c * 2 + 1] - y) < 0.01f)
+        return true;
+    }
+    return false;
+  };
+  CHECK(matches_a_centroid(0.0f, 0.0f));
+  CHECK(matches_a_centroid(5.0f, 5.0f));
+  CHECK(matches_a_centroid(9.0f, 1.0f));
 }

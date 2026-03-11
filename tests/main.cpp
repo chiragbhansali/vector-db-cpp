@@ -1,5 +1,6 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include "doctest/doctest.h"
+#include "distance.hpp"
 #include "flat_index.hpp"
 #include "ivf_flat_index.hpp"
 #include "kmeans.hpp"
@@ -54,16 +55,14 @@ bruteforce_l2(const std::vector<std::vector<float>> &db,
   return all;
 }
 
-// On-the-fly cosine over raw (unnormalized) vectors, sorted descending
+// Raw inner product over vectors, sorted descending
 static std::vector<SearchResult>
-bruteforce_cosine(const std::vector<std::vector<float>> &db,
-                  std::span<const float> query) {
-  float qn = vec_norm(query);
+bruteforce_inner_product(const std::vector<std::vector<float>> &db,
+                         std::span<const float> query) {
   std::vector<SearchResult> all;
   all.reserve(db.size());
   for (size_t i = 0; i < db.size(); ++i) {
-    float vn = vec_norm(db[i]);
-    float sim = (qn > 0 && vn > 0) ? dot(query, db[i]) / (qn * vn) : 0.0f;
+    float sim = dot(query, db[i]);
     all.push_back({i, sim});
   }
   std::sort(all.begin(), all.end(),
@@ -118,11 +117,11 @@ TEST_CASE("FlatIndex basic operations") {
   }
 }
 
-TEST_CASE("FlatIndex Cosine Similarity") {
-  // Setup an index for 2D vectors using Cosine metric
-  FlatIndex index(2, Metric::Cosine);
+TEST_CASE("FlatIndex InnerProduct") {
+  // Setup an index for 2D unit vectors using InnerProduct metric
+  FlatIndex index(2, Metric::InnerProduct);
 
-  // Insert normalized vectors
+  // Insert unit vectors (caller's responsibility to normalize for cosine semantics)
   index.insert(std::vector<float>{1.0f, 0.0f});  // ID 0: X-axis
   index.insert(std::vector<float>{0.0f, 1.0f});  // ID 1: Y-axis
   index.insert(std::vector<float>{-1.0f, 0.0f}); // ID 2: Negative X-axis
@@ -142,29 +141,27 @@ TEST_CASE("FlatIndex Cosine Similarity") {
 
     REQUIRE(results.size() == 3);
 
-    // 1. Exact match
+    // 1. Exact match: dot([1,0],[1,0]) = 1
     CHECK(results[0].id == 0);
     CHECK(results[0].score == doctest::Approx(1.0f));
 
-    // 2. Orthogonal (90 degrees)
+    // 2. Orthogonal (90 degrees): dot([1,0],[0,1]) = 0
     CHECK(results[1].id == 1);
     CHECK(results[1].score == doctest::Approx(0.0f));
 
-    // 3. Opposite (180 degrees)
+    // 3. Opposite (180 degrees): dot([1,0],[-1,0]) = -1
     CHECK(results[2].id == 2);
     CHECK(results[2].score == doctest::Approx(-1.0f));
   }
 
   SUBCASE("Ranking by similarity") {
-    // Query at 45 degrees [1, 1] (unnormalized)
+    // Query [1,1]: dot with [1,0]=1, dot with [0,1]=1 (both equally close)
     std::vector<float> query = {1.0f, 1.0f};
     auto results = index.search(query, 2);
 
-    // [1,1] is equally close to [1,0] and [0,1]
-    // Correct Cosine: 1 / sqrt(2) approx 0.707
     REQUIRE(results.size() == 2);
-    CHECK(results[0].score == doctest::Approx(0.70710678f));
-    CHECK(results[1].score == doctest::Approx(0.70710678f));
+    CHECK(results[0].score == doctest::Approx(1.0f));
+    CHECK(results[1].score == doctest::Approx(1.0f));
   }
 }
 
@@ -197,15 +194,15 @@ TEST_CASE("Randomized: Top-K ordering matches brute force") {
     }
   }
 
-  SUBCASE("Cosine") {
-    FlatIndex index(DIM, Metric::Cosine);
+  SUBCASE("InnerProduct") {
+    FlatIndex index(DIM, Metric::InnerProduct);
     for (auto &v : db)
       index.insert(v);
 
     for (size_t q = 0; q < 5; ++q) {
       auto query = generate_random_vectors(1, DIM, rng)[0];
       auto got = index.search(query, K);
-      auto ref = bruteforce_cosine(db, query);
+      auto ref = bruteforce_inner_product(db, query);
 
       REQUIRE(got.size() == K);
       for (size_t i = 0; i < K; ++i) {
@@ -240,10 +237,9 @@ TEST_CASE("Randomized: Deterministic results with fixed seed") {
   }
 }
 
-// Vectors scaled by random factors (0.01–100x).  The index pre-normalizes at
-// insert time; this confirms the resulting scores match on-the-fly cosine
-// computed on the raw magnitudes.
-TEST_CASE("Randomized: Cosine stable across magnitude scales") {
+// Vectors scaled by random factors (0.01–100x), then pre-normalized before
+// inserting. Scores are raw dot products on unit vectors == cosine similarity.
+TEST_CASE("Randomized: InnerProduct stable across magnitude scales") {
   constexpr size_t N = 200, DIM = 32, K = 10;
   std::mt19937 rng(77);
   std::uniform_real_distribution<float> scale_dist(0.01f, 100.0f);
@@ -255,9 +251,13 @@ TEST_CASE("Randomized: Cosine stable across magnitude scales") {
       x *= s;
   }
 
-  FlatIndex index(DIM, Metric::Cosine);
-  for (auto &v : db)
+  // Pre-normalize before inserting; keep a normalized copy for brute-force ref
+  FlatIndex index(DIM, Metric::InnerProduct);
+  std::vector<std::vector<float>> db_norm = db;
+  for (auto &v : db_norm) {
+    normalize(std::span<float>(v.data(), v.size()));
     index.insert(v);
+  }
 
   for (size_t q = 0; q < 5; ++q) {
     auto query = generate_random_vectors(1, DIM, rng)[0];
@@ -266,7 +266,7 @@ TEST_CASE("Randomized: Cosine stable across magnitude scales") {
       x *= qs;
 
     auto got = index.search(query, K);
-    auto ref = bruteforce_cosine(db, query);
+    auto ref = bruteforce_inner_product(db_norm, query);
 
     REQUIRE(got.size() == K);
     for (size_t i = 0; i < K; ++i) {
@@ -282,7 +282,7 @@ TEST_CASE("SIMD vs Scalar: Results must be identical") {
   std::mt19937 rng(42);
   auto db = generate_random_vectors(N, DIM, rng);
 
-  for (auto metric : {Metric::L2, Metric::Cosine}) {
+  for (auto metric : {Metric::L2, Metric::InnerProduct}) {
     FlatIndex index(DIM, metric);
     for (auto &v : db)
       index.insert(v);
@@ -518,26 +518,32 @@ TEST_CASE("IVFFlatIndex regression: insert before train throws") {
 
 // Bug: metric_ ignored — search() always used compute_l2 regardless of the
 // metric passed to the constructor.
-// Regression: construct two discriminating vectors where L2 and cosine disagree
-// on the nearest neighbour, then assert cosine search picks the right one.
+// Regression: construct two discriminating vectors where L2 and InnerProduct
+// disagree on the nearest neighbour, then assert InnerProduct search picks the right one.
 //
-//   v0 = [10, 0]  — far from origin, perfectly aligned with query [1, 0]
-//   v1 = [0.1, 0.995] — close in L2, but nearly orthogonal to [1, 0]
-//   cosine nearest: v0 (similarity ≈ 1.0)
-//   L2 nearest:     v1 (squared dist ≈ 0.81 + 0.99 ≈ 1.80 vs 81 for v0)
-TEST_CASE("IVFFlatIndex regression: metric_ drives search (cosine vs L2)") {
+//   v0 = [1, 0]  (normalized from [10, 0]) — perfectly aligned with query [1, 0]
+//   v1 ≈ [0.0999, 0.995] (normalized from [0.1, 0.995]) — nearly orthogonal to [1, 0]
+//   InnerProduct nearest: v0 (dot ≈ 1.0)
+//   L2 nearest:           v1 (unit vectors are both close, but v1 is closer in L2)
+TEST_CASE("IVFFlatIndex regression: metric_ drives search (InnerProduct vs L2)") {
   constexpr size_t DIM = 2, K_CENTROIDS = 1;
   // Single centroid so nprobe=1 is a full scan.
   std::vector<float> train_data = {10.0f, 0.0f, 0.1f, 0.995f};
 
-  IVFFlatIndex idx(DIM, Metric::Cosine, /*nprobe=*/1, K_CENTROIDS);
+  IVFFlatIndex idx(DIM, Metric::InnerProduct, /*nprobe=*/1, K_CENTROIDS);
   idx.train(train_data);
-  idx.insert(std::vector<float>{10.0f, 0.0f});   // id 0 — cosine nearest
-  idx.insert(std::vector<float>{0.1f, 0.995f});  // id 1 — L2 nearest
+
+  // Pre-normalize before inserting — caller's responsibility with InnerProduct
+  std::vector<float> v0 = {10.0f, 0.0f};
+  std::vector<float> v1 = {0.1f, 0.995f};
+  normalize(std::span<float>(v0.data(), v0.size()));
+  normalize(std::span<float>(v1.data(), v1.size()));
+  idx.insert(v0);  // id 0 — InnerProduct nearest to [1,0]
+  idx.insert(v1);  // id 1 — L2 nearest to [1,0] among unit vectors
 
   auto results = idx.search(std::vector<float>{1.0f, 0.0f}, 1);
   REQUIRE(results.size() == 1);
-  // If metric_ is ignored (L2 used), this returns id 1; correct cosine returns id 0.
+  // If metric_ is ignored (L2 used), this returns id 1; correct InnerProduct returns id 0.
   CHECK(results[0].id == 0);
 }
 

@@ -12,7 +12,7 @@ struct SearchResult {
   float score;
 };
 
-enum class Metric { L2, Cosine };
+enum class Metric { L2, InnerProduct };
 
 class VectorIndex {
 public:

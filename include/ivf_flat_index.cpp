@@ -59,6 +59,9 @@ std::vector<SearchResult> IVFFlatIndex::search(std::span<const float> query,
   std::vector<SearchResult> results;
   results.reserve(pq.size());
   while (!pq.empty()) {
+    float final_score = pq.top().score;
+    if (metric_ == Metric::InnerProduct)
+      final_score = -final_score;
     results.push_back({pq.top().id, pq.top().score});
     pq.pop();
   }

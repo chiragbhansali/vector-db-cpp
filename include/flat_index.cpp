@@ -25,10 +25,6 @@ void FlatIndex::insert(std::span<const float> vec) {
   // Copy the actual data into the first 'dim_' slots
   std::copy(vec.begin(), vec.end(), data_.begin() + start_idx);
 
-  if (metric_ == Metric::Cosine) {
-    std::span<float> inserted_vec(data_.data() + start_idx, aligned_dim_);
-    normalize(inserted_vec);
-  }
   ++size_;
 }
 
@@ -53,10 +49,6 @@ std::vector<SearchResult> FlatIndex::search(std::span<const float> query,
 
   std::vector<float> q_padded(aligned_dim_, 0.0f);
   std::copy(query.begin(), query.end(), q_padded.begin());
-
-  if (metric_ == Metric::Cosine) {
-    normalize(q_padded);
-  }
 
   for (size_t i = 0; i < size_; ++i) {
     std::span<const float> vec_i(data_.data() + (i * aligned_dim_),
@@ -83,7 +75,7 @@ std::vector<SearchResult> FlatIndex::search(std::span<const float> query,
   results.reserve(pq.size());
   while (!pq.empty()) {
     float final_score = pq.top().score;
-    if (metric_ == Metric::Cosine)
+    if (metric_ == Metric::InnerProduct)
       final_score = -final_score;
     results.push_back({pq.top().id, final_score});
     pq.pop();

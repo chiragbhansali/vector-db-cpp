@@ -28,8 +28,8 @@ set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(google_benchmark)
 
 # --- Library ---
-add_library(vector_index INTERFACE)
-target_include_directories(vector_index INTERFACE 
+add_library(vector_index include/flat_index.cpp include/kmeans.cpp include/ivf_flat_index.cpp)
+target_include_directories(vector_index PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
@@ -38,6 +38,9 @@ target_compile_features(vector_index INTERFACE cxx_std_20)
 # --- Tests ---
 add_executable(unit_tests tests/main.cpp)
 target_link_libraries(unit_tests PRIVATE vector_index doctest::doctest)
+
+add_executable(eval_runner tests/eval.cpp)
+target_link_libraries(eval_runner PRIVATE vector_index)
 
 # --- Benchmarks ---
 add_executable(benchmarks benchmarks/main.cpp)

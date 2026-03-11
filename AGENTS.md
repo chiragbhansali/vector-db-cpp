@@ -14,7 +14,7 @@ Based on `plan.md`, the v1 implementation focuses on simplicity and correctness:
 *   **Result Management:** Max-heap of size K to maintain top results.
 *   **Supported Metrics:**
     *   Squared L2 (Euclidean) distance.
-    *   Cosine similarity (via dot product of normalized vectors).
+    *   Inner Product (raw dot product). For cosine semantics, callers pre-normalize vectors before inserting.
 
 ## Scope & Constraints
 *   **Included:** Exact results, fixed dimensionality, single thread (initially), simple insert/search API.

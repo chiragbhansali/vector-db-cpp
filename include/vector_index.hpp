@@ -10,7 +10,6 @@
 struct SearchResult {
   size_t id;
   float score;
-
 };
 
 enum class Metric { L2, Cosine };

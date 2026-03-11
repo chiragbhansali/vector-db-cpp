@@ -1,4 +1,5 @@
 #include "kmeans.hpp"
+#include "distance.hpp"
 #include <algorithm>
 #include <numeric>
 #include <random>
@@ -65,23 +66,7 @@ std::vector<size_t> KMeans::assign(std::span<const float> data, size_t dim,
   // Match every vector in 'data' to its closest centroid
   for (size_t i = 0; i < num_vectors; ++i) {
     std::span<const float> vec(data.data() + i * dim, dim);
-    float min_dist = std::numeric_limits<float>::max();
-    size_t best_centroid = 0;
-
-    for (size_t c = 0; c < k; ++c) {
-      std::span<const float> centroid(centroids.data() + c * dim, dim);
-      float dist = 0;
-      for (size_t j = 0; j < dim; ++j) {
-        float diff = (vec[j] - centroid[j]);
-        dist += diff * diff;
-      }
-      if (dist < min_dist) {
-        min_dist = dist;
-        best_centroid = c;
-      }
-    }
-
-    assignments[i] = best_centroid;
+    assignments[i] = find_closest_centroid(vec, centroids, dim);
   }
 
   return assignments;

@@ -1,6 +1,6 @@
 #pragma once
+#include "distance.hpp"
 #include "vector_index.hpp"
-#include <arm_neon.h>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -18,18 +18,6 @@ public:
   void load(const std::string &path) override;
   size_t size() const override;
   size_t dimension() const override;
-
-private:
-  static void normalize(std::span<float> vec);
-
-  float compute_l2(std::span<const float> vec1,
-                   std::span<const float> vec2) const;
-  float compute_dot(std::span<const float> vec1,
-                    std::span<const float> vec2) const;
-  float compute_dot_simd(std::span<const float> a,
-                         std::span<const float> b) const;
-  float compute_l2_simd(std::span<const float> a,
-                        std::span<const float> b) const;
 
 private:
   size_t dim_;

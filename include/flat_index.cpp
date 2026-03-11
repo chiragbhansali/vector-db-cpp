@@ -1,6 +1,6 @@
 #include "flat_index.hpp"
+#include "distance.hpp"
 #include <algorithm>
-#include <cmath>
 #include <fstream>
 #include <queue>
 
@@ -30,20 +30,6 @@ void FlatIndex::insert(std::span<const float> vec) {
     normalize(inserted_vec);
   }
   ++size_;
-}
-
-void FlatIndex::normalize(std::span<float> vec) {
-  float vec_len = 0.0f;
-  for (size_t i = 0; i < vec.size(); i++) {
-    vec_len += vec[i] * vec[i];
-  }
-  vec_len = std::sqrtf(vec_len);
-  if (vec_len <= 0.0f)
-    return;
-  float inv = 1.0f / vec_len;
-  for (size_t i = 0; i < vec.size(); ++i) {
-    vec[i] *= inv;
-  }
 }
 
 std::vector<SearchResult> FlatIndex::search(std::span<const float> query,
@@ -136,48 +122,3 @@ void FlatIndex::load(const std::string &path) {
 
 size_t FlatIndex::size() const { return size_; }
 size_t FlatIndex::dimension() const { return dim_; }
-
-float FlatIndex::compute_l2(std::span<const float> vec1,
-                            std::span<const float> vec2) const {
-  float dst_sum = 0;
-  for (size_t i = 0; i < vec1.size(); ++i) {
-    dst_sum += (vec1[i] - vec2[i]) * (vec1[i] - vec2[i]);
-  }
-  return dst_sum;
-}
-
-float FlatIndex::compute_dot(std::span<const float> vec1,
-                             std::span<const float> vec2) const {
-  float dot_prod = 0;
-  for (size_t i = 0; i < vec1.size(); ++i) {
-    dot_prod += vec1[i] * vec2[i];
-  }
-  return dot_prod;
-}
-
-float FlatIndex::compute_dot_simd(std::span<const float> a,
-                                  std::span<const float> b) const {
-  size_t n = a.size();
-  float32x4_t sum_vec = vdupq_n_f32(0.0f);
-  size_t i = 0;
-  for (; i + 3 < n; i += 4) {
-    float32x4_t va = vld1q_f32(&a[i]);
-    float32x4_t vb = vld1q_f32(&b[i]);
-    sum_vec = vfmaq_f32(sum_vec, va, vb);
-  }
-  return vaddvq_f32(sum_vec);
-}
-
-float FlatIndex::compute_l2_simd(std::span<const float> a,
-                                 std::span<const float> b) const {
-  size_t n = a.size();
-  float32x4_t diff_sq_sum = vdupq_n_f32(0.0f);
-  size_t i = 0;
-  for (; i + 3 < n; i += 4) {
-    float32x4_t va = vld1q_f32(&a[i]);
-    float32x4_t vb = vld1q_f32(&b[i]);
-    float32x4_t diff = vsubq_f32(va, vb);
-    diff_sq_sum = vfmaq_f32(diff_sq_sum, diff, diff);
-  }
-  return vaddvq_f32(diff_sq_sum);
-}

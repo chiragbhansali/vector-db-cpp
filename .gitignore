@@ -50,3 +50,4 @@ coverage/
 *.gcda
 *.gcno
 .github/agents/Learn.agent.md
+plans/*.md

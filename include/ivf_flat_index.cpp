@@ -35,6 +35,9 @@ std::vector<SearchResult> IVFFlatIndex::search(std::span<const float> query,
 
 std::vector<SearchResult> IVFFlatIndex::search(std::span<const float> query,
                                                size_t k, size_t nprobe) const {
+  if (nprobe == 0 || k == 0)
+    return {};
+
   std::vector<SearchResult> n_centroids =
       find_closest_centroids(query, centroids_, dim_, nprobe);
   auto comp = [](const SearchResult &a, const SearchResult &b) {
@@ -45,7 +48,9 @@ std::vector<SearchResult> IVFFlatIndex::search(std::span<const float> query,
 
   for (size_t i = 0; i < n_centroids.size(); ++i) {
     for (const Entry &entry : inverted_lists_[n_centroids[i].id]) {
-      float score = compute_l2(entry.vec, query);
+      float score = (metric_ == Metric::InnerProduct)
+                        ? -compute_dot(entry.vec, query)
+                        : compute_l2(entry.vec, query);
 
       if (pq.size() < k) {
         pq.push({entry.id, score});
@@ -62,7 +67,7 @@ std::vector<SearchResult> IVFFlatIndex::search(std::span<const float> query,
     float final_score = pq.top().score;
     if (metric_ == Metric::InnerProduct)
       final_score = -final_score;
-    results.push_back({pq.top().id, pq.top().score});
+    results.push_back({pq.top().id, final_score});
     pq.pop();
   }
 

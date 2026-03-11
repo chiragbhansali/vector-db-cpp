@@ -34,6 +34,21 @@ Based on `plan.md`, the v1 implementation focuses on simplicity and correctness:
 *   **Dependencies:** Doctest (unit tests), Google Benchmark (benchmarks) — fetched automatically via `FetchContent`.
 *   **Performance:** Focus on cache-friendly memory layouts and minimizing allocations in the hot path.
 
+## Implementation Log
+
+The log lives at `notes/impl-log.md`. It captures the raw, honest record of what was built — intended as source material for blog posts, not polished documentation.
+
+A good entry covers one or more of:
+- A wrong assumption that caused a bug, and why the mental model was off
+- A test that turned out to verify nothing (false confidence), and what fixed it
+- A design decision where two options existed — what was picked and why
+- A surprising benchmark result and what it implies
+- Something from a paper or reference that did not match reality in practice
+
+Write entries during or immediately after the work. Do not reconstruct them later. Honest and specific beats clean and general.
+
+---
+
 ## Build & Run
 
 ### Tests

@@ -28,7 +28,7 @@ set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(google_benchmark)
 
 # --- Library ---
-add_library(vector_index include/flat_index.cpp include/kmeans.cpp include/ivf_flat_index.cpp)
+add_library(vector_index include/flat_index.cpp include/kmeans.cpp include/ivf_flat_index.cpp include/ivf_pq.cpp include/product_quantizer.cpp)
 target_include_directories(vector_index PUBLIC 
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>

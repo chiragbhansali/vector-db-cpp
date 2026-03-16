@@ -50,7 +50,7 @@ std::vector<uint8_t> ProductQuantizer::encode(std::span<const float> vec) {
 }
 
 std::vector<float>
-ProductQuantizer::compute_distance_table(std::span<const float> query) {
+ProductQuantizer::compute_distance_table(std::span<const float> query) const {
   std::vector<float> sub_vector_centroid_map;
   sub_vector_centroid_map.reserve(M_ * K_);
 
@@ -67,4 +67,12 @@ ProductQuantizer::compute_distance_table(std::span<const float> query) {
     }
   }
   return sub_vector_centroid_map;
+}
+
+std::vector<float> ProductQuantizer::get_codebooks() const {
+  return codebooks_;
+}
+
+void ProductQuantizer::set_codebooks(std::vector<float> codebooks) {
+  codebooks_ = codebooks;
 }

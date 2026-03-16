@@ -7,7 +7,9 @@ public:
   explicit ProductQuantizer(size_t M_, size_t K_, size_t dim_);
   void train(std::span<const float> data);
   std::vector<uint8_t> encode(std::span<const float> vec);
-  std::vector<float> compute_distance_table(std::span<const float> query);
+  std::vector<float> compute_distance_table(std::span<const float> query) const;
+  std::vector<float> get_codebooks() const;
+  void set_codebooks(std::vector<float> codebooks);
 
 private:
   size_t M_; // number of subspaces

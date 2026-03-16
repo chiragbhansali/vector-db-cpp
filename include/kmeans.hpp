@@ -5,7 +5,7 @@
 class KMeans {
 public:
   struct Config {
-    size_t k;
+    size_t k; // number of centroids
     size_t max_iterations;
     float tolerance = 1e-4; // Stop if centroids move less than this
     uint32_t seed = 42;     // fixed default, caller can override

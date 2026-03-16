@@ -8,6 +8,9 @@
 
 std::vector<float> KMeans::train(std::span<const float> data, size_t dim,
                                  const Config &config) {
+  if (data.size() / dim < config.k) {
+    throw std::runtime_error("KMeans: num_vectors (N) must be >= K");
+  }
   // Pick K random vectors from 'data' and store them in a 'centroids' vector
   std::vector<float> centroids =
       pick_random_centroids(data, dim, config.k, config.seed);

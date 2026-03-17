@@ -1,6 +1,7 @@
 #pragma once
 #include "vector_index.hpp"
 #include <arm_neon.h>
+#include <cassert>
 #include <cmath>
 #include <limits>
 #include <queue>
@@ -136,6 +137,7 @@ inline float compute_dot(std::span<const float> vec1,
 inline float compute_dot_simd(std::span<const float> a,
                               std::span<const float> b) {
   size_t n = a.size();
+  assert(n % 4 == 0);
   float32x4_t sum_vec = vdupq_n_f32(0.0f);
   size_t i = 0;
   for (; i + 3 < n; i += 4) {
@@ -158,6 +160,7 @@ inline float compute_dot_simd(std::span<const float> a,
 inline float compute_l2_simd(std::span<const float> a,
                              std::span<const float> b) {
   size_t n = a.size();
+  assert(n % 4 == 0);
   float32x4_t diff_sq_sum = vdupq_n_f32(0.0f);
   size_t i = 0;
   for (; i + 3 < n; i += 4) {

@@ -798,7 +798,7 @@ static std::vector<float> make_cluster_data(size_t n_clusters,
 // Train and populate an IVFPQIndex from a flat data buffer.
 static IVFPQIndex build_ivfpq(std::span<const float> db, size_t dim,
                                size_t num_centroids, size_t nprobe) {
-  IVFPQIndex idx(dim, Metric::L2, nprobe, num_centroids);
+  IVFPQIndex idx(dim, Metric::L2, nprobe, num_centroids, /*M=*/8, /*K=*/256);
   idx.train(db);
   for (size_t i = 0; i + dim <= db.size(); i += dim)
     idx.insert(db.subspan(i, dim));
@@ -1072,7 +1072,7 @@ TEST_CASE("ProductQuantizer - ADC arithmetic") {
 
 TEST_CASE("IVFPQIndex - constructor") {
   SUBCASE("size and dimension") {
-    IVFPQIndex idx(8, Metric::L2, 2, 4);
+    IVFPQIndex idx(8, Metric::L2, 2, 4, /*M=*/8, /*K=*/256);
     CHECK(idx.size() == 0);
     CHECK(idx.dimension() == 8);
   }
@@ -1080,18 +1080,18 @@ TEST_CASE("IVFPQIndex - constructor") {
 
 TEST_CASE("IVFPQIndex - error paths") {
   SUBCASE("insert before train throws") {
-    IVFPQIndex idx(8, Metric::L2, 2, 4);
+    IVFPQIndex idx(8, Metric::L2, 2, 4, /*M=*/8, /*K=*/256);
     std::vector<float> vec(8, 0.0f);
     CHECK_THROWS_AS(idx.insert(vec), std::runtime_error);
   }
 
   SUBCASE("save to invalid path throws") {
-    IVFPQIndex idx(8, Metric::L2, 2, 4);
+    IVFPQIndex idx(8, Metric::L2, 2, 4, /*M=*/8, /*K=*/256);
     CHECK_THROWS(idx.save("/nonexistent/path/file.bin"));
   }
 
   SUBCASE("load from missing file throws") {
-    IVFPQIndex idx(8, Metric::L2, 2, 4);
+    IVFPQIndex idx(8, Metric::L2, 2, 4, /*M=*/8, /*K=*/256);
     CHECK_THROWS(idx.load("/no_such_file.bin"));
   }
 }
@@ -1102,7 +1102,7 @@ TEST_CASE("IVFPQIndex - size tracking") {
   auto train_data = make_cluster_data(4, 75, DIM, 0.5f, 42);
 
   SUBCASE("increments on insert") {
-    IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+    IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
     idx.train(train_data);
     CHECK(idx.size() == 0);
     for (size_t i = 0; i < 5; ++i) {
@@ -1112,7 +1112,7 @@ TEST_CASE("IVFPQIndex - size tracking") {
   }
 
   SUBCASE("resets on retrain") {
-    IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+    IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
     idx.train(train_data);
     for (size_t i = 0; i < 5; ++i)
       idx.insert(std::span<const float>(train_data.data() + i * DIM, DIM));
@@ -1123,7 +1123,7 @@ TEST_CASE("IVFPQIndex - size tracking") {
 
   SUBCASE("IDs are sequential") {
     constexpr size_t N = 10;
-    IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+    IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
     idx.train(train_data);
     for (size_t i = 0; i < N; ++i)
       idx.insert(std::span<const float>(train_data.data() + i * DIM, DIM));
@@ -1145,28 +1145,28 @@ TEST_CASE("IVFPQIndex - search edge cases") {
   auto train_data = make_cluster_data(4, 75, DIM, 0.5f, 42);
 
   SUBCASE("k=0 returns empty") {
-    IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+    IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
     idx.train(train_data);
     idx.insert(std::span<const float>(train_data.data(), DIM));
     CHECK(idx.search(std::vector<float>(DIM, 0.0f), 0).empty());
   }
 
   SUBCASE("nprobe=0 returns empty") {
-    IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+    IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
     idx.train(train_data);
     idx.insert(std::span<const float>(train_data.data(), DIM));
     CHECK(idx.search(std::vector<float>(DIM, 0.0f), 5, 0).empty());
   }
 
   SUBCASE("empty corpus returns empty") {
-    IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+    IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
     idx.train(train_data);
     CHECK(idx.search(std::vector<float>(DIM, 0.0f), 5).empty());
   }
 
   SUBCASE("k > corpus returns all vectors") {
     constexpr size_t N = 10;
-    IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+    IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
     idx.train(train_data);
     for (size_t i = 0; i < N; ++i)
       idx.insert(std::span<const float>(train_data.data() + i * DIM, DIM));
@@ -1176,7 +1176,7 @@ TEST_CASE("IVFPQIndex - search edge cases") {
 
   SUBCASE("nprobe > num_centroids is handled") {
     constexpr size_t N = 10, NC = 4;
-    IVFPQIndex idx(DIM, Metric::L2, NC, NC);
+    IVFPQIndex idx(DIM, Metric::L2, NC, NC, /*M=*/8, /*K=*/256);
     idx.train(train_data);
     for (size_t i = 0; i < N; ++i)
       idx.insert(std::span<const float>(train_data.data() + i * DIM, DIM));
@@ -1195,7 +1195,7 @@ TEST_CASE("IVFPQIndex - search results ordering") {
   SUBCASE("sorted ascending by score") {
     constexpr size_t DIM = 8, N = 4 * 75;
     auto data = make_cluster_data(4, 75, DIM, 0.5f, 7);
-    IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+    IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
     idx.train(data);
     for (size_t i = 0; i < N; ++i)
       idx.insert(std::span<const float>(data.data() + i * DIM, DIM));
@@ -1211,7 +1211,7 @@ TEST_CASE("IVFPQIndex regression - retrain clears state") {
   // 4 clusters × 75 = 300 vectors: enough for K=256 PQ k-means per subspace
   auto dataA = make_cluster_data(4, 75, DIM, 0.1f, 42);
 
-  IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+  IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
   idx.train(dataA);
   for (size_t i = 0; i < 5; ++i)
     idx.insert(std::span<const float>(dataA.data() + i * DIM, DIM));
@@ -1249,7 +1249,7 @@ TEST_CASE("IVFPQIndex integration - exact recall on well-separated clusters") {
   constexpr size_t NC = 4, NPE = 75, DIM = 8, N = NC * NPE;
   auto data = make_cluster_data(NC, NPE, DIM, 0.05f, 42);
 
-  IVFPQIndex idx(DIM, Metric::L2, NC, NC);
+  IVFPQIndex idx(DIM, Metric::L2, NC, NC, /*M=*/8, /*K=*/256);
   idx.train(data);
   for (size_t i = 0; i < N; ++i)
     idx.insert(std::span<const float>(data.data() + i * DIM, DIM));
@@ -1273,7 +1273,7 @@ TEST_CASE("IVFPQIndex integration - recall degrades gracefully with nprobe") {
   for (auto &x : data)
     x = dist(rng);
 
-  IVFPQIndex idx(DIM, Metric::L2, NC, NC);
+  IVFPQIndex idx(DIM, Metric::L2, NC, NC, /*M=*/8, /*K=*/256);
   idx.train(data);
   for (size_t i = 0; i < N; ++i)
     idx.insert(std::span<const float>(data.data() + i * DIM, DIM));
@@ -1314,14 +1314,14 @@ TEST_CASE("IVFPQIndex serialization") {
   constexpr size_t DIM = 8, NC = 4, NPE = 75, N = NC * NPE;
   auto data = make_cluster_data(NC, NPE, DIM, 0.5f, 42);
 
-  IVFPQIndex idx(DIM, Metric::L2, NC, NC);
+  IVFPQIndex idx(DIM, Metric::L2, NC, NC, /*M=*/8, /*K=*/256);
   idx.train(data);
   for (size_t i = 0; i < N; ++i)
     idx.insert(std::span<const float>(data.data() + i * DIM, DIM));
 
   SUBCASE("save-load round-trip") {
     idx.save(fname);
-    IVFPQIndex loaded(DIM, Metric::L2, NC, NC);
+    IVFPQIndex loaded(DIM, Metric::L2, NC, NC, /*M=*/8, /*K=*/256);
     loaded.load(fname);
 
     CHECK(loaded.size() == idx.size());
@@ -1346,7 +1346,7 @@ TEST_CASE("IVFPQIndex serialization") {
 
   SUBCASE("codebooks survive round-trip") {
     idx.save(fname);
-    IVFPQIndex loaded(DIM, Metric::L2, NC, NC);
+    IVFPQIndex loaded(DIM, Metric::L2, NC, NC, /*M=*/8, /*K=*/256);
     loaded.load(fname);
 
     // ADC scores must be bitwise identical (same codebooks, same computation)
@@ -1362,7 +1362,7 @@ TEST_CASE("IVFPQIndex serialization") {
 
   SUBCASE("all PQEntry data survives") {
     idx.save(fname);
-    IVFPQIndex loaded(DIM, Metric::L2, NC, NC);
+    IVFPQIndex loaded(DIM, Metric::L2, NC, NC, /*M=*/8, /*K=*/256);
     loaded.load(fname);
 
     std::vector<float> q(DIM, 0.0f);
@@ -1394,7 +1394,7 @@ TEST_CASE("IVFPQIndex edge cases") {
     // Need N >= K=256 training sub-vectors (300 vectors × 1 dim/subspace = 300 each)
     constexpr size_t DIM = 8;
     auto data = make_cluster_data(4, 75, DIM, 0.5f, 42); // 300 vectors
-    IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+    IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
     idx.train(data);
     for (size_t i = 0; i < 10; ++i)
       idx.insert(std::span<const float>(data.data() + i * DIM, DIM));
@@ -1408,7 +1408,7 @@ TEST_CASE("IVFPQIndex edge cases") {
     constexpr size_t DIM = 8, NC = 4;
     auto train_data = make_cluster_data(NC, 75, DIM, 0.5f, 42); // 300 vecs
 
-    IVFPQIndex idx(DIM, Metric::L2, NC, NC);
+    IVFPQIndex idx(DIM, Metric::L2, NC, NC, /*M=*/8, /*K=*/256);
     idx.train(train_data);
 
     // Insert one representative per cluster (first vector of each cluster block)
@@ -1426,7 +1426,7 @@ TEST_CASE("IVFPQIndex edge cases") {
   SUBCASE("duplicate vectors get distinct IDs") {
     constexpr size_t DIM = 8;
     auto train = make_cluster_data(4, 75, DIM, 0.5f, 42); // 300 vecs, K=256 safe
-    IVFPQIndex idx(DIM, Metric::L2, 4, 4);
+    IVFPQIndex idx(DIM, Metric::L2, 4, 4, /*M=*/8, /*K=*/256);
     idx.train(train);
 
     std::vector<float> v(DIM, 0.0f);
@@ -1450,7 +1450,7 @@ TEST_CASE("IVFPQIndex edge cases") {
     constexpr size_t DIM = 8, N = 20, NC = 1;
     auto train_data = make_cluster_data(4, 75, DIM, 0.5f, 42); // 300 vecs
 
-    IVFPQIndex idx(DIM, Metric::L2, NC, NC);
+    IVFPQIndex idx(DIM, Metric::L2, NC, NC, /*M=*/8, /*K=*/256);
     idx.train(train_data);
 
     // Insert 20 near-origin vectors into the single list
@@ -1470,51 +1470,12 @@ TEST_CASE("IVFPQIndex edge cases") {
 // Section 7: Regression tests
 // ===========================================================================
 
-TEST_CASE("IVFPQIndex regression - metric does not affect ADC scoring") {
-  SUBCASE("InnerProduct index has non-negative ascending scores") {
-    constexpr size_t DIM = 8, N = 4 * 75;
-    auto data = make_cluster_data(4, 75, DIM, 0.5f, 42);
-    IVFPQIndex idx(DIM, Metric::InnerProduct, 4, 4);
-    idx.train(data);
-    for (size_t i = 0; i < N; ++i)
-      idx.insert(std::span<const float>(data.data() + i * DIM, DIM));
-
-    std::vector<float> q(DIM, 50.0f);
-    auto results = idx.search(q, N, 4);
-    REQUIRE(!results.empty());
-    for (const auto &r : results)
-      CHECK(r.score >= 0.0f);
-    for (size_t i = 1; i < results.size(); ++i)
-      CHECK(results[i - 1].score <= results[i].score);
+TEST_CASE("IVFPQIndex regression - InnerProduct metric throws") {
+  SUBCASE("constructor throws for InnerProduct") {
+    constexpr size_t DIM = 8;
+    CHECK_THROWS_AS(IVFPQIndex(DIM, Metric::InnerProduct, 4, 4, /*M=*/8, /*K=*/256),
+                    std::invalid_argument);
   }
-}
-
-TEST_CASE("IVFPQIndex regression - centroid routing always uses L2") {
-  // With InnerProduct metric, centroid assignment must still use L2.
-  // vec=[0.2,0,...]: L2-nearest centroid is the one near 0.1, not near 10.
-  // If routing used IP instead, the high-magnitude centroid would win and
-  // the vector would not be found with nprobe=1.
-  constexpr size_t DIM = 8, NC = 2;
-
-  // 150 vecs near 0.1 + 150 near 10.0 = 300 total (>= K=256 for PQ)
-  std::mt19937 rng(42);
-  std::uniform_real_distribution<float> noise(-0.01f, 0.01f);
-  std::vector<float> train(300 * DIM, 0.0f);
-  for (size_t i = 0; i < 150; ++i)
-    train[i * DIM] = 0.1f + noise(rng);
-  for (size_t i = 150; i < 300; ++i)
-    train[i * DIM] = 10.0f + noise(rng);
-
-  IVFPQIndex idx(DIM, Metric::InnerProduct, 1, NC);
-  idx.train(train);
-
-  std::vector<float> v(DIM, 0.0f);
-  v[0] = 0.2f; // L2-nearest to centroid ~0.1, IP-nearest to centroid ~10
-  idx.insert(v);
-
-  auto results = idx.search(v, 1, 1);
-  REQUIRE(!results.empty());
-  CHECK(results[0].id == 0); // found: routing used L2 (correct)
 }
 
 TEST_CASE("KMeans: k=N each vector is its own centroid") {

@@ -51,3 +51,4 @@ coverage/
 *.gcno
 .github/agents/Learn.agent.md
 plans/*.md
+notes/*.md

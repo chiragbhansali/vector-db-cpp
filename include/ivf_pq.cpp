@@ -8,7 +8,10 @@
 IVFPQIndex::IVFPQIndex(size_t dimension, Metric metric, size_t nprobe,
                        size_t num_centroids)
     : dim_(dimension), metric_(metric), nprobe_(nprobe),
-      num_centroids_(num_centroids), size_(0), pq_(M_, K_, dim_) {}
+      num_centroids_(num_centroids), size_(0), pq_(M_, K_, dim_) {
+  if (metric_ != Metric::L2)
+    throw std::invalid_argument("IVFPQIndex only supports Metric::L2");
+}
 
 void IVFPQIndex::train(std::span<const float> data) {
   KMeans cluster;

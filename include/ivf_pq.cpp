@@ -89,6 +89,8 @@ void IVFPQIndex::save(const std::string &path) const {
   os.write(reinterpret_cast<const char *>(&num_centroids_),
            sizeof(num_centroids_));
   os.write(reinterpret_cast<const char *>(&metric_), sizeof(metric_));
+  os.write(reinterpret_cast<const char *>(&K_), sizeof(K_));
+  os.write(reinterpret_cast<const char *>(&M_), sizeof(M_));
   os.write(reinterpret_cast<const char *>(centroids_.data()),
            centroids_.size() * sizeof(float));
   std::vector<float> codebooks = pq_.get_codebooks();
@@ -115,6 +117,8 @@ void IVFPQIndex::load(const std::string &path) {
   is.read(reinterpret_cast<char *>(&nprobe_), sizeof(nprobe_));
   is.read(reinterpret_cast<char *>(&num_centroids_), sizeof(num_centroids_));
   is.read(reinterpret_cast<char *>(&metric_), sizeof(metric_));
+  is.read(reinterpret_cast<char *>(&K_), sizeof(K_));
+  is.read(reinterpret_cast<char *>(&M_), sizeof(M_));
 
   centroids_.resize(num_centroids_ * dim_);
   is.read(reinterpret_cast<char *>(centroids_.data()),

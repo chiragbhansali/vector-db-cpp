@@ -5,7 +5,10 @@
 #include <vector>
 
 ProductQuantizer::ProductQuantizer(size_t M_, size_t K_, size_t dim_)
-    : M_(M_), K_(K_), dim_(dim_) {}
+    : M_(M_), K_(K_), dim_(dim_) {
+  if (K_ > 256)
+    throw std::invalid_argument("K must be <= 256 to fit in uint8_t codes");
+}
 
 void ProductQuantizer::train(std::span<const float> data) {
   size_t num_vectors = data.size() / dim_;

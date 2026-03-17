@@ -6,9 +6,9 @@
 #include <vector>
 
 IVFPQIndex::IVFPQIndex(size_t dimension, Metric metric, size_t nprobe,
-                       size_t num_centroids)
+                       size_t num_centroids, size_t m, size_t k)
     : dim_(dimension), metric_(metric), nprobe_(nprobe),
-      num_centroids_(num_centroids), size_(0), pq_(M_, K_, dim_) {
+      num_centroids_(num_centroids), size_(0), K_(k), M_(m), pq_(M_, K_, dim_) {
   if (metric_ != Metric::L2)
     throw std::invalid_argument("IVFPQIndex only supports Metric::L2");
 }
@@ -130,6 +130,7 @@ void IVFPQIndex::load(const std::string &path) {
   codebooks.resize(K_ * dim_);
   is.read(reinterpret_cast<char *>(codebooks.data()),
           codebooks.size() * sizeof(float));
+  pq_ = ProductQuantizer(M_, K_, dim_);
   pq_.set_codebooks(codebooks);
 
   inverted_lists_.resize(num_centroids_);

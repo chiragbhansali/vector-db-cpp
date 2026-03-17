@@ -15,7 +15,7 @@ public:
   // Note: only Metric::L2 is supported. InnerProduct is not implemented
   // in the ADC distance table and will throw at construction time.
   explicit IVFPQIndex(size_t dimension, Metric metric, size_t nprobe,
-                      size_t num_centroids);
+                      size_t num_centroids, size_t M_, size_t K_);
   void train(std::span<const float> data) override;
   void insert(std::span<const float> vec) override;
   std::vector<SearchResult> search(std::span<const float> query,

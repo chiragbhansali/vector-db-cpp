@@ -24,7 +24,8 @@ void IVFFlatIndex::insert(std::span<const float> vec) {
   size_t best_centroid = find_closest_centroid(vec, centroids_, dim_);
   std::vector<float> vec_modified(vec.begin(),
                                   vec.end()); // convert span to vector
-  inverted_lists_[best_centroid].push_back(Entry{size_, vec_modified});
+  inverted_lists_[best_centroid].push_back(
+      Entry{size_, std::move(vec_modified)});
   ++size_;
 }
 
